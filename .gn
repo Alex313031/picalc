@@ -1,0 +1,11 @@
+# This file is used by the GN meta build system to find the root of the source
+# tree and to set startup options. For documentation on the values set in this
+# file, run "gn help dotfile" at the command line.
+
+# The location of the build configuration file.
+buildconfig = "//build/BUILDCONFIG.gn"
+
+default_args = {
+  # Build everything, in non debug mode, and package it.
+  is_release_build = false
+}

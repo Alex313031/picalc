@@ -1,0 +1,104 @@
+# Main BUILD.gn that contains all the targets
+
+# Build everything except test stuff
+group("gn_all") {
+  deps = [
+    ":check_simd",
+    ":logger",
+    ":loglib",
+  ]
+}
+
+# check_simd and logger app
+group("check_simd_all") {
+  testonly = false
+  deps = [
+    ":check_simd",
+    ":logger"
+  ]
+}
+
+# Test Hello World applications
+group("hello_all") {
+  testonly = true
+  deps = [
+    "//test:hello",
+    "//test:hello_shared",
+    "//test:hello_static"
+  ]
+}
+
+# The main application
+executable("check_simd") {
+  sources = [
+    "check_simd/check_simd.cc",
+    "check_simd/check_simd.h",
+    "check_simd/cpuid.h"
+  ]
+  configs += [ "//build/config:no_div_by_zero" ]
+  deps = [ ":loglib" ]
+}
+
+# Standalone logger target
+executable("logger") {
+  defines = [ "STATIC_LOGGER=1" ]
+  sources = [
+    "logger/logger_main.cc",
+    "logger/logger_main.h"
+  ]
+  configs += [ "//build/config:no_div_by_zero" ]
+  deps = [ ":loglib", ]
+}
+
+# Shared source files between logger and check_simd
+shared_library("loglib") {
+  sources = [
+    "logger/logger.cc",
+    "logger/logger.h"
+  ]
+  configs += [ "//build/config:no_div_by_zero" ]
+  deps = [ ":base" ]
+  if (is_win) {
+    output_name = "liblog.dll"
+  } else if (is_linux) {
+    output_name = "liblog"
+  } else if (is_mac) {
+    outputs = "liblog.dylib"
+  } else {
+    output_name = "liblog"
+  }
+}
+
+# Shared source files between logger and check_simd
+static_library("logar") {
+  if (is_static_logger) {
+    defines = [ "STATIC_LOGGER=1" ]
+  }
+  sources = [
+    "base/export.h",
+    "logger/logger.cc",
+    "logger/logger.h"
+  ]
+  configs += [ "//build/config:no_div_by_zero" ]
+  deps = [ ":base" ]
+}
+
+source_set("base") {
+  sources = [
+    "base/buildflag.h",
+    "base/dcheck.h",
+    "base/export.h",
+    "base/file_util.h",
+    "base/logging.cc",
+    "base/logging.h",
+    "base/rand_util.cc",
+    "base/rand_util.h",
+    "base/strings/utf_string_conversions.cc",
+    "base/strings/utf_string_conversions.h",
+    "base/strings/utf_string_conversion_utils.cc",
+    "base/strings/utf_string_conversion_utils.h",
+    "base/posix/file_util_posix.cc",
+    "base/posix/safe_strerror.cc",
+    "base/posix/safe_strerror.h",
+   ]
+}

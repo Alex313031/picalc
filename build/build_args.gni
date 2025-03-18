@@ -1,0 +1,49 @@
+# is_FOO booleans for convenience in writing OS-based conditions.
+is_linux = current_os == "linux"
+is_mac = current_os == "mac"
+is_win = current_os == "win" || current_os == "winuwp"
+is_fuchsia = current_os == "fuchsia"
+is_posix = !is_win && !is_fuchsia
+
+# Basic build configuration
+declare_args() {
+  # Wether to make a debug build.
+  # In debug mode, all assertions are turned on, all compiler
+  # optimization is turned off, and all symbols are included.
+  # This makes a large, slow binary that should never be distributed
+  # to end users. Set to false to make a release build. 
+  is_debug = true
+
+  # Whether to use GNU's GCC (POSIX only).
+  # Could be overridden for use in a MinGW environment
+  # or for using a custom GCC toolchain on MacOS.
+  use_gcc = is_posix
+
+  # Whether to use MSVC (Windows only). Can also be 
+  # set to true when cross compiling on Linux for Windows, 
+  # but for that I reccomend using Clang.
+  use_msvc = is_win
+
+  # Whether to use LLVM/Clang instead of the platform native compiler
+  # (such as GCC on Linux, MSVC on Windows, etc.).
+  # Good for cross compiling on Linux for Windows or ARM64.
+  # Default for Mac because I don't want to spend the time setting
+  # up an XCode SDK toolchain that I can't and won't/wouldn't even use.
+  use_clang = is_mac
+}
+
+# Internal args that are set based on the ones above.
+# Only the ones above are supposed to be user controllable.
+# Don't adjust these unless you know what you're doing.
+declare_args() {
+  is_gcc = use_gcc
+
+  is_msvc = use_msvc && !is_clang && !is_gcc && target_os == "win"
+
+  # Probably shouldn't change this
+  is_clang = use_clang && !is_msvc && !is_gcc
+}
+
+if (is_msvc) {
+  assert(target_os == "win" || is_win, "MSVC cannot be used as the toolchain to target non-Windows platforms")
+}

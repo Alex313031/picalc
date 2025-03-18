@@ -1,0 +1,67 @@
+import("//build/build_args.gni")
+
+# Include directories
+config("includes") {
+  include_dirs = [
+    "..",
+    root_gen_dir,
+  ]
+}
+
+source_set("build") {
+  sources = [ "build_config.h" ]
+}
+
+# Executable configs -----------------------------------------------------------
+# This config defines the configs applied to all executables.
+config("executable_config") {
+  configs = []
+
+  if (is_win) {
+    configs += [ "//build/config:default_libs" ]
+  } else {
+    configs += [
+      "//build/config:default_libs",
+      "//build/toolchain:toolchain"
+    ]
+  }
+}
+
+# Shared library configs -------------------------------------------------------
+# This config defines the configs applied to all shared libraries.
+config("shared_library_config") {
+  configs = []
+
+  if (is_win) {
+    configs += [ "//build/config:default_libs" ]
+  } else {
+    configs += [
+      "//build/config:default_libs",
+      "//build/toolchain:toolchain"
+    ]
+  }
+}
+
+# Debug/Release ----------------------------------------------------------------
+config("debug") {
+  configs = [ "//build/config:compiler", ]
+  if (is_debug) {
+    defines = [
+      "DEBUG",
+      "_DEBUG",
+      "DYNAMIC_ANNOTATIONS_ENABLED=1",
+    ]
+    configs += [ "//build/config:debug", ]
+  }
+}
+
+config("release") {
+  configs = [ "//build/config:compiler", ]
+  if (!is_debug) {
+    defines = [
+      "NDEBUG",
+      "_NDEBUG"
+    ]
+    configs += [ "//build/config:release", ]
+  }
+}

@@ -1,0 +1,326 @@
+import("//build/build_args.gni")
+
+declare_args() {
+  # Whether to build with AVX instructions.
+  # See https://en.wikipedia.org/wiki/Advanced_Vector_Extensions
+  use_avx = true
+
+  # Whether to keep DCHECK on, even in a release build.
+  # See dcheck.h
+  dcheck_always_on = is_debug
+}
+
+# Debug/release-related defines.
+config("debug") {
+  # Full symbols and assertions
+  defines = [
+    "SYMBOL_LEVEL=2",
+    "DCHECK_IS_ON=1"
+  ]
+}
+config("release") {
+  # No symbols or assertions
+  defines = [
+    "SYMBOL_LEVEL=0",
+    "RELEASE=1",
+  ]
+}
+
+# Compiler flags ---------------------------------------------------------------
+# Set up our baseline compiler flags, and optimization flags
+config("compiler") {
+  # Compiler flags
+  # Use 2017 syntax for //base
+  # and because >= GCC 8, >= Clang 5, and
+  # >= MSVC 19.15 (MSVS 2017 15.8 update) supports it.
+  # Compilation/development can thus be done on Windows 7 SP1+
+  cflags = [ "-std=c++17" ]
+  # C only flags
+  cflags_c = []
+  # C++ only flags
+  cflags_cc = cflags
+  # Linker flags
+  ldflags = []
+  # Assembler flags
+  asmflags = []
+  # Archiver flags
+  arflags = []
+  # Configs to import from other BUILD.gns
+  configs = []
+  # Compiler DEFINEs
+  defines = []
+
+
+  if (dcheck_always_on) {
+    defines += [ "DCHECK_IS_ON=1" ]
+  }
+  if (is_static_logger) {
+    # Build logger app and check_simd without shared liblog library
+    defines += [ "STATIC_LOGGER=1" ]
+  }
+
+  if (is_posix) {
+    # Use standard C++ stuff
+    cflags += [ "-lstdc++", ]
+  }
+
+  if (is_posix && !is_mac) {
+    if (is_linux) {
+      cflags += [
+        "-fPIC",
+        "-pthread",
+      ]
+      ldflags += [ "-fPIC", ]
+    }
+    if (current_cpu == "x64" || current_cpu == "ppc64") {
+      cflags += [ "-m64", ]
+      ldflags += [ "-m64" ]
+    } else if (current_cpu == "x86") {
+      cflags += [ "-m32", ]
+      ldflags += [ "-m32", ]
+    } else if (current_cpu == "arm") {
+      cflags += [ "--target=arm-linux-gnueabihf", "-mthumb", "-mfloat-abi=$arm_float_abi", "-mfpu=$arm_fpu" ]
+      ldflags += [ "--target=arm-linux-gnueabihf", "-march=", ]
+    } else if (current_cpu == "arm64") {
+      cflags += [ "--target=aarch64-linux-gnu", "-mfpu=neon", "-march=",  ]
+      ldflags += [ "--target=aarch64-linux-gnu", "-mfpu=neon", "-march=", ]
+    } else if (current_cpu == "riscv64") {
+      cflags += [ "--target=riscv64-linux-gnu", ]
+      ldflags += [ "--target=riscv64-linux-gnu", ]
+    } else if (current_cpu == "ppc64") {
+      cflags += [ "--target=ppc64-linux-gnu", "-m64", ]
+      ldflags += [ "--target=ppc64-linux-gnu", "-m64", ]
+    } else {
+      print("Unsupported target_cpu")
+    }
+    if (is_debug) {
+      cflags += [
+        "-g2", # Include full debugging symbols
+        "-Og", # Optimize lightly, excluding debug stuff
+        "-w", # Warnings
+        "-Werror", # Warnings are errors
+      ]
+      ldflags += [
+        "-Wl,-O0", # Don't optimize
+        "-Werror", # May be set to -Wno-error if it causes problems
+      ]
+    } else {
+      cflags += [
+        "-g0", # Disable debugging symbols
+        "-O3", # Enable full optimization
+        "-s", # Enable stripping
+        "-Wno-error", # Warnings aren't errors
+      ]
+      ldflags += [
+        "-Wl,-O3", # Enables string tail merge optimization
+        "-Wno-error",
+      ]
+    }
+    asmflags = cflags
+    configs += [ ":linux" ]
+  }
+
+  if (is_win) {
+    if (is_debug) {
+      cflags = [
+        "/Od",  # Disable optimization.
+        "/Ob0", # Disable all inlining (on by default).
+        "/GF",  # Enable string pooling (off by default).
+        "/Z7",  # Debug information in the .obj files.
+        "/Zi",  # Produce PDB file, no edit and continue.
+      ]
+      if (target_cpu == "arm64") {
+        cflags += [ "/Oy-", ] # Disable omitting frame pointers, must be after /Ox.
+      }
+      ldflags += [
+        "/DEBUG", # Make a .pdb file
+        "/OPT:NOREF", # Leave unreferenced data in
+        "/OPT:NOICF", # Don't fold redundant COMDAT data.
+      ]
+    } else {
+      cflags += [
+        "/O2",  # Fully optimize (MSVC)
+        "/Zc:inline",  # Remove unreferenced COMDAT (faster links).
+        # Put data in separate COMDATs. This allows the linker
+        # to put bit-identical constants at the same address even if
+        # they're unrelated constants, which saves binary size.
+        # This optimization can't be used when ASan is enabled because
+        # it is not compatible with the ASan ODR checker.
+        "/Gw",
+      ]
+      if (is_clang) {
+        # Fully optimize (LLVM)
+        cflags += [ "/clang:-O3", ]
+      }
+      ldflags += [
+        "/OPT:REF", # Remove unreferenced data. 
+        "/OPT:ICF", # Fold redundant COMDAT data.
+        "/DEBUG:NONE", # No .pdb
+      ]
+    }
+    asmflags = cflags
+    configs += [ ":windows" ]
+  }
+
+  if (is_mac) {
+    if (is_debug) {
+      cflags += [
+        "-g",
+      ]
+    } else {
+      cflags += [
+        "-fPIC",
+      ]
+    }
+    asmflags = cflags
+  }
+}
+
+# POSIX/Linux specific compiler stuff
+config("linux") {
+  cflags = [
+    "-fdata-sections",
+    "-ffunction-sections",
+    "-fno-math-errno" # So the compiler knows it can inline math functions.
+  ]
+  if (current_cpu == "x86") {
+    cflags += [ "-mfpmath=sse", "-mmx", "-msse", ]
+  } else if (current_cpu == "x64") {
+    cflags += [ "-msse2", ]
+  }
+  if (use_avx) {
+    cflags += [ "-mavx", ]
+  }
+  asmflags = cflags
+}
+
+# Windows specific compiler stuff
+config("windows") {
+  # Defines that set up the CRT.
+  defines = [
+    "__STD_C", # Yup standard C++
+    "_CRT_RAND_S", # Allow rand_s() function
+    "_CRT_SECURE_NO_DEPRECATE", # Disable deprecation warnings
+    "_SCL_SECURE_NO_DEPRECATE",
+  ]
+
+  # Defines that set up the Windows SDK.
+  defines += [
+    "_WINDOWS", # Yup this is Windows alright
+    "WIN32", # Even if on 64 bit, tis still win32
+    "PSAPI_VERSION=1", # Set to 2 if you don't need to support < Win7
+    "_SECURE_ATL", # Can be removed if causes issues
+    "WINVER=0x0501", # Set to 0x0601 if you don't need to support < Win7
+    # Set to _WIN32_WINNT_WIN7 if you don't need to support < Win7
+    "_WIN32_WINNT=_WIN32_WINNT_WINXP",
+  ]
+  cflags = [
+    "/Gy", # Enable function-level linking.
+  ]
+  ldflags = [ "/NXCOMPAT", ]
+  if (is_clang) {
+    cflags += [
+      "/clang:-fdiagnostics-format=clang", # Assuming you want clang format.
+      "/clang:-fno-math-errno", # So the compiler knows it can inline math functions.
+    ]
+    if (current_cpu == "x86") {
+      if (host_cpu == "x86" || host_cpu == "x64") {
+        cflags += [ "-m32" ]
+      } else {
+        cflags += [ "--target=i386-windows" ]
+      }
+    } else if (current_cpu == "x64") {
+      if (host_cpu == "x86" || host_cpu == "x64") {
+        cflags += [ "-m64" ]
+      } else {
+        cflags += [ "--target=x86_64-windows" ]
+      }
+    } else if (current_cpu == "arm64") {
+      cflags += [ "--target=aarch64-pc-windows" ]
+    } else {
+      assert(false, "unknown current_cpu " + current_cpu)
+    }
+  }
+  if (current_cpu == "x86") {
+    if (is_clang) {
+      cflags += [ "-mmmx", "-msse", ]
+    }
+    cflags += [ "/arch:SSE", ]
+    ldflags += [ "/largeaddressaware", ]
+  } else if (current_cpu == "x64") {
+    if (is_clang) {
+      cflags += [ "-mmmx", "-msse", "-msse2", ]
+    }
+    cflags += [ "/arch:SSE2", ]
+  }
+  if (use_avx) {
+    cflags += [ "/arch:AVX", ]
+  }
+  if (is_debug) {
+    ldflags += [ "/INCREMENTAL", ]
+  } else {
+    # Disable incremental builds
+    ldflags += [ "/INCREMENTAL:NO", ]
+    if (is_clang) {
+      # Enable string tail merging
+      ldflags += [ "/OPT:LLDTAILMERGE", ]
+    }
+  }
+  # Specify minimum WINNT version for this program to run on
+  # No that is not a typo. The number has to have a zero
+  # for some strange reason. For the same reason, if you
+  # wanted to set the minimum to Windows 7 instead of XP
+  # you would use ,6.01 instead of ,6.1 which is the real
+  # NT version number
+  subsystem_version_suffix = ",5.01"
+  ldflags += [ "/SUBSYSTEM:CONSOLE$subsystem_version_suffix" ]
+  ldflags += [ "/SUBSYSTEM:WINDOWS$subsystem_version_suffix" ]
+  asmflags = cflags
+}
+
+# Some third party code might not compile with WIN32_LEAN_AND_MEAN so we have
+# to have a separate config for it. Remove this config from your target to
+# get the "bloaty and accommodating" version of windows.h.
+config("lean_and_mean") {
+  defines = [ "WIN32_LEAN_AND_MEAN" ]
+}
+
+# For kill code in logger.h
+config("no_div_by_zero") {
+  cflags = [ "-Wno-div-by-zero" ]
+  if (is_clang) {
+    ldflags = [ "-Wl,-Wno-div-by-zero" ]
+  }
+}
+
+# Default libraries ------------------------------------------------------------
+# This config defines the default libraries applied to all targets.
+config("default_libs") {
+  if (is_win) {
+    # Basic win32 libs for generic development and NT 5.x support.
+    libs = [
+      "comdlg32.lib",
+      "ntdll.lib",
+      "psapi.lib",
+    ]
+    if (current_os == "winuwp") {
+      # These libraries are needed for Windows UWP (i.e. store apps).
+      libs += [ "dloadhelper.lib", "WindowsApp.lib", ]
+    } else {
+      # These libraries are not compatible with Windows UWP.
+      libs += [ "kernel32.lib", "ole32.lib", ]
+    }
+  } else if (is_mac) {
+    # Targets define their own
+    libs = []
+  } else if (is_linux) {
+    libs = [
+      "dl",
+      "pthread",
+      "rt",
+    ]
+  } else {
+    # NOTREACHED This should never be reached
+    print("NOTREACHED: No default libs applied during compilation!")
+  }
+}

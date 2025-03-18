@@ -1,0 +1,40 @@
+# Sample Hello World applications
+group("hello_all") {
+  testonly = true
+  deps = [
+    ":hello",
+    ":hello_shared",
+    ":hello_static"
+  ]
+}
+
+# Hello World sample
+executable("hello") {
+  testonly = true
+  sources = [ "hello.cc" ]
+
+  deps = [
+    ":hello_shared",
+    ":hello_static"
+  ]
+}
+
+# Static library sample
+shared_library("hello_shared") {
+  testonly = true
+  defines = [ "HELLO_SHARED_IMPLEMENTATION" ]
+
+  sources = [
+    "hello_shared.cc",
+    "hello_shared.h"
+  ]
+}
+
+# Shared libary sample
+static_library("hello_static") {
+  testonly = true
+  sources = [
+    "hello_static.cc",
+    "hello_static.h"
+  ]
+}

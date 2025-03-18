@@ -1,0 +1,9 @@
+
+# Set to true to make a debug build
+is_debug = true
+
+use_avx = true # Use AVX instructions
+use_avx2 = true # Use AVX2 and FMA3 instructions
+is_clang = false # Uses GCC by default
+is_win = false # Project only tested on Linux for now
+dcheck_always_on = is_debug # Just like Chromium
